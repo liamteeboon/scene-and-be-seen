@@ -20,6 +20,8 @@ A Home Assistant automation blueprint that activates **scenes** (not just lights
 
 ## Installation
 
+[![Open your Home Assistant instance and show the blueprint import dialog with a specific blueprint pre-filled.](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fliamteeboon%2Fscene-and-be-seen%2Fblob%2Fmain%2Fmotion_scene_lighting.yaml)
+
 ### Import from URL
 
 Open **Settings → Automations & Scenes → Blueprints → Import Blueprint** and paste the raw GitHub URL of `motion_scene_lighting.yaml`.
