@@ -1,0 +1,231 @@
+blueprint:
+  name: Scene and be seen (time window + late-night scene)
+  description: >
+    Turns on a scene when a motion/presence sensor detects someone, and applies
+    a second scene once nobody has been detected for a set time.
+
+
+    **Time window:** the automation only turns things ON between the window start
+    and window end (midnight crossing is supported, e.g. 17:00 to 07:00).
+    The "no motion" action always runs, even if the window has closed in the
+    meantime, so lights are never left on.
+
+
+    **Late-night tier:** optionally use different scenes from a "late" start time
+    until the window ends (e.g. a dim, warm scene after 23:00).
+  domain: automation
+  homeassistant:
+    min_version: 2024.10.0
+  input:
+    sensors_section:
+      name: Sensors and timing
+      icon: mdi:motion-sensor
+      input:
+        motion_sensors:
+          name: Motion / presence sensors
+          description: >
+            One or more binary sensors with device class motion, occupancy or
+            presence. Lights stay on while ANY of them is detecting.
+          selector:
+            entity:
+              multiple: true
+              filter:
+                - domain: binary_sensor
+                  device_class:
+                    - motion
+                    - occupancy
+                    - presence
+        no_motion_wait:
+          name: No-motion delay (seconds)
+          description: >
+            How long ALL sensors must be clear before the "no motion" action runs.
+          default: 120
+          selector:
+            number:
+              min: 0
+              max: 7200
+              step: 5
+              unit_of_measurement: seconds
+              mode: box
+        window_start:
+          name: Active window start
+          description: Motion is ignored before this time.
+          default: "17:00:00"
+          selector:
+            time: {}
+        window_end:
+          name: Active window end
+          description: >
+            Motion is ignored from this time. If it is earlier than the start
+            time, the window runs overnight.
+          default: "07:00:00"
+          selector:
+            time: {}
+
+    normal_section:
+      name: Scenes (normal period)
+      icon: mdi:lightbulb-on
+      input:
+        scene_on:
+          name: Scene on motion
+          description: Activated when motion is detected inside the window.
+          selector:
+            entity:
+              domain: scene
+        off_scene:
+          name: Scene on no motion (optional)
+          description: >
+            Activated when the no-motion delay expires. Leave empty to turn off
+            the lights/entities chosen under "Fallback turn-off targets" instead.
+          default: ""
+          selector:
+            entity:
+              domain: scene
+
+    late_section:
+      name: Late-night scenes (optional)
+      icon: mdi:weather-night
+      collapsed: true
+      input:
+        late_start:
+          name: Late period start
+          description: >
+            From this time until the window end, the late-night scenes below are
+            used instead. Only has an effect if a late scene is set.
+          default: "23:00:00"
+          selector:
+            time: {}
+        late_scene_on:
+          name: Late scene on motion
+          description: >
+            Used on motion during the late period. If motion is already being
+            detected when the late period starts, this scene is applied then.
+            Leave empty to keep using the normal scene.
+          default: ""
+          selector:
+            entity:
+              domain: scene
+        late_off_scene:
+          name: Late scene on no motion
+          description: >
+            Used on no motion during the late period (e.g. a very dim night
+            light). Leave empty to use the normal no-motion behaviour.
+          default: ""
+          selector:
+            entity:
+              domain: scene
+
+    fallback_section:
+      name: Fallback turn-off targets
+      icon: mdi:lightbulb-off
+      collapsed: true
+      input:
+        off_target:
+          name: Entities to turn off
+          description: >
+            Only used when no "no motion" scene applies. Anything you pick is
+            turned off with homeassistant.turn_off.
+          default: {}
+          selector:
+            target: {}
+
+mode: restart
+
+variables:
+  sensors: !input motion_sensors
+  late_scene: !input late_scene_on
+  late_off: !input late_off_scene
+  off_scene: !input off_scene
+  off_target: !input off_target
+  no_motion_wait: !input no_motion_wait
+  late_start_t: !input late_start
+  window_end_t: !input window_end
+  # Decided once at trigger time so the on-scene and the later no-motion scene
+  # always come from the same tier, even if the window closes in between.
+  late_period: >
+    {% set n = now().strftime('%H:%M:%S') %}
+    {% set s = late_start_t %}
+    {% set e = window_end_t %}
+    {{ (s <= e and s <= n < e) or (s > e and (n >= s or n < e)) }}
+
+triggers:
+  - trigger: state
+    entity_id: !input motion_sensors
+    to: "on"
+    id: motion
+  # Catches someone already in the room when the window opens
+  - trigger: time
+    at: !input window_start
+    id: window_start
+  # Switches to the late scene if someone is still in the room
+  - trigger: time
+    at: !input late_start
+    id: late_start
+
+conditions:
+  - alias: Inside the active time window
+    condition: time
+    after: !input window_start
+    before: !input window_end
+  - alias: At least one sensor is detecting
+    condition: template
+    value_template: >
+      {{ expand(sensors) | selectattr('state', 'eq', 'on') | list | count > 0 }}
+  - alias: Late-start trigger only matters if a late scene is set
+    condition: template
+    value_template: "{{ trigger.id != 'late_start' or late_scene != '' }}"
+
+actions:
+  # 1. Apply the on-scene (late or normal)
+  - choose:
+      - alias: Late period with a late scene configured
+        conditions:
+          - condition: template
+            value_template: "{{ late_period and late_scene != '' }}"
+        sequence:
+          - action: scene.turn_on
+            target:
+              entity_id: "{{ late_scene }}"
+    default:
+      - action: scene.turn_on
+        target:
+          entity_id: !input scene_on
+
+  # 2. Wait until every sensor is clear for the delay. Loops if motion returns
+  #    during the delay (covers motion that arrives after the window has closed).
+  - repeat:
+      sequence:
+        - wait_template: >
+            {{ expand(sensors) | selectattr('state', 'eq', 'on') | list | count == 0 }}
+        - delay:
+            seconds: "{{ no_motion_wait | int(0) }}"
+      until:
+        - condition: template
+          value_template: >
+            {{ expand(sensors) | selectattr('state', 'eq', 'on') | list | count == 0 }}
+
+  # 3. No-motion action. Deliberately NOT restricted to the time window.
+  - choose:
+      - alias: Late period with a late no-motion scene
+        conditions:
+          - condition: template
+            value_template: "{{ late_period and late_off != '' }}"
+        sequence:
+          - action: scene.turn_on
+            target:
+              entity_id: "{{ late_off }}"
+      - alias: Normal no-motion scene
+        conditions:
+          - condition: template
+            value_template: "{{ off_scene != '' }}"
+        sequence:
+          - action: scene.turn_on
+            target:
+              entity_id: "{{ off_scene }}"
+      - alias: Fallback - turn off chosen targets
+        conditions:
+          - condition: template
+            value_template: "{{ off_target | length > 0 }}"
+        sequence:
+          - action: homeassistant.turn_off
+            target: !input off_target
