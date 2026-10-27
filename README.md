@@ -20,16 +20,16 @@ A Home Assistant automation blueprint that activates **scenes** (not just lights
 
 ## Installation
 
+### Import from URL
+
+Open **Settings → Automations & Scenes → Blueprints → Import Blueprint** and paste the raw GitHub URL of `motion_scene_lighting.yaml`.
+
 ### Manual
 
 1. Download `motion_scene_lighting.yaml`.
 2. Copy it to `<config>/blueprints/automation/` (a subfolder such as `<config>/blueprints/automation/yourname/` is fine).
 3. In Home Assistant, go to **Settings → Automations & Scenes → Blueprints** and confirm it appears (reload automations or restart if it doesn't).
 4. Create an automation from the blueprint and fill in the inputs.
-
-### Import from URL
-
-Open **Settings → Automations & Scenes → Blueprints → Import Blueprint** and paste the raw GitHub URL of `motion_scene_lighting.yaml`.
 
 ## Inputs
 

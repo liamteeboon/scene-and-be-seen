@@ -4,12 +4,10 @@ blueprint:
     Turns on a scene when a motion/presence sensor detects someone, and applies
     a second scene once nobody has been detected for a set time.
 
-
     **Time window:** the automation only turns things ON between the window start
     and window end (midnight crossing is supported, e.g. 17:00 to 07:00).
     The "no motion" action always runs, even if the window has closed in the
     meantime, so lights are never left on.
-
 
     **Late-night tier:** optionally use different scenes from a "late" start time
     until the window ends (e.g. a dim, warm scene after 23:00).
